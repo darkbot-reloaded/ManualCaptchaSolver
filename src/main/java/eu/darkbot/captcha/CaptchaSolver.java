@@ -52,19 +52,14 @@ public class CaptchaSolver implements CaptchaAPI {
 
     private static class SolverJFXPanel extends JFXPanel {
         private final CompletableFuture<String> key;
-        private final WebView webView;
 
         private Timeline timeline;
         private JDialog dialog;
-        private int maxFrames = 120;
+        private int maxFrames = 120 * 2; // 120 seconds * 2 frames per second
 
         public SolverJFXPanel(CompletableFuture<String> key) {
             this.key = key;
-            this.webView = new WebView();
             setPreferredSize(new Dimension(460, 535));
-
-            setScene(new Scene(webView));
-
 
             JPanel panel = new JPanel(new MigLayout("fill, insets 0"));
             panel.add(this);
@@ -73,25 +68,26 @@ public class CaptchaSolver implements CaptchaAPI {
                     JOptionPane.DEFAULT_OPTION, null, new Object[]{}, null);
             pane.setBorder(BorderFactory.createEmptyBorder(0, 0, -4, 0));
 
-            key.whenComplete((k, t) -> closePopup());
+            key.whenComplete((k, t) -> {
+                if (timeline != null) {
+                    timeline.stop();
+                    timeline = null;
+                }
+                if (dialog != null) {
+                    dialog.setVisible(false);
+                    dialog.dispose();
+                    dialog = null;
+                }
+            });
 
             Platform.runLater(this::prepareWebView);
             Popups.showMessageSync("Manual captcha solver", pane, d -> this.dialog = d);
         }
 
-        public void closePopup() {
-            if (timeline != null) {
-                timeline.stop();
-                timeline = null;
-            }
-            if (dialog != null) {
-                dialog.setVisible(false);
-                dialog.dispose();
-                dialog = null;
-            }
-        }
-
         private void prepareWebView() {
+            WebView webView = new WebView();
+            setScene(new Scene(webView));
+
             webView.getChildrenUnmodifiable().addListener((ListChangeListener<Node>) change -> {
                 Set<Node> deadSeaScrolls = webView.lookupAll(".scroll-bar");
                 for (Node scroll : deadSeaScrolls) scroll.setVisible(false);
@@ -103,22 +99,27 @@ public class CaptchaSolver implements CaptchaAPI {
                 if (newState != Worker.State.SUCCEEDED || !webView.getEngine().getLocation().equals(url)) return;
 
                 String script = "" +
-                        "function setup() {" +
-                        "let qcContainer = document.getElementById('qc-cmp2-container');" +
-                        "let container = document.getElementsByClassName('eh_mc_container eh_mc_table')[0];" +
-                        "var cap = document.getElementsByClassName('bgcdw_captcha')[0];" +
-                        "if (!qcContainer || !container || !cap) {" +
-                        "    setTimeout() => setup(), 5);" +
+                        // Close cookie container, if it exists
+                        "setTimeout(() -> {" +
+                        "  let qcContainer = document.getElementById('qc-cmp2-container');" +
+                        "  if (qcContainer != null) qcContainer.remove();" +
+                        "}, 500);" +
+                        // Repeating function that tries to remove extra elements keeping captcha only
+                        "function tryCleanPage(delay) {" +
+                        "  if (delay > 1000) return;" + // We ran too many times, just stop
+                        "  let container = document.getElementsByClassName('eh_mc_container eh_mc_table')[0];" +
+                        "  let cap = document.getElementsByClassName('bgcdw_captcha')[0];" +
+                        "  if (!container || !cap) {" +
+                        "    setTimeout(() => setup(delay + 25), delay);" + // Try to delay a bit more next time
                         "    return;" +
+                        "  }" +
+                        "  container.innerHTML = '';" +
+                        "  container.appendChild(cap);" +
+                        "  document.getElementsByTagName('body')[0].style.minWidth = 0;" +
+                        "  let styles = [...document.getElementsByTagName('style')];" +
+                        "  for (let i in styles) styles[i].remove();" +
                         "}" +
-                        "qcContainer.remove();" +
-                        "container.innerHTML = '';" +
-                        "container.appendChild(cap);" +
-                        "document.getElementsByTagName('body')[0].style.minWidth = 0;" +
-                        "let styles = [...document.getElementsByTagName('style')];" +
-                        "for (let i in styles) styles[i].remove();" +
-                        "}" +
-                        "setup();";
+                        "tryCleanPage(5);";
 
                 webView.getEngine().executeScript(script);
 
