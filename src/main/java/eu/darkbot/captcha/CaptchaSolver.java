@@ -100,7 +100,7 @@ public class CaptchaSolver implements CaptchaAPI {
 
                 String script = "" +
                         // Close cookie container, if it exists
-                        "setTimeout(() -> {" +
+                        "setTimeout(() => {" +
                         "  let qcContainer = document.getElementById('qc-cmp2-container');" +
                         "  if (qcContainer != null) qcContainer.remove();" +
                         "}, 500);" +
@@ -110,7 +110,7 @@ public class CaptchaSolver implements CaptchaAPI {
                         "  let container = document.getElementsByClassName('eh_mc_container eh_mc_table')[0];" +
                         "  let cap = document.getElementsByClassName('bgcdw_captcha')[0];" +
                         "  if (!container || !cap) {" +
-                        "    setTimeout(() => setup(delay + 25), delay);" + // Try to delay a bit more next time
+                        "    setTimeout(() => tryCleanPage(delay + 25), delay);" + // Try to delay a bit more next time
                         "    return;" +
                         "  }" +
                         "  container.innerHTML = '';" +
