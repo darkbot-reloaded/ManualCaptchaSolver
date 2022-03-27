@@ -131,7 +131,7 @@ public class CaptchaSolver implements CaptchaAPI {
                     if (dialog == null) return;
 
                     String response = (String) engine.executeScript("grecaptcha.getResponse()");
-                    if (response != null) key.complete(response);
+                    if (response != null && !response.isEmpty()) key.complete(response);
                     else if (maxFrames > 0) {
                         maxFrames--;
                         dialog.setTitle("Manual captcha solver (" + (maxFrames / 2) + "s left)");
