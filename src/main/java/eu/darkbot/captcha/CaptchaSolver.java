@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 public class CaptchaSolver implements CaptchaAPI {
@@ -37,12 +38,12 @@ public class CaptchaSolver implements CaptchaAPI {
         System.out.println("Captcha detected, opening solver...");
 
         CompletableFuture<String> key = new CompletableFuture<>();
-        SwingUtilities.invokeLater(() -> new SolverJFXPanel(key));
+        SwingUtilities.invokeLater(() -> new SolverJFXPanel(key).display());
 
         try {
-            String response = key.get();
+            String response = key.get(150, TimeUnit.SECONDS); // Worst-case scenario, timeout after 150s
             if (response != null) return Collections.singletonMap("g-recaptcha-response", response);
-        } catch (InterruptedException | ExecutionException e) {
+        } catch (InterruptedException | ExecutionException | TimeoutException e) {
             e.printStackTrace();
         }
 
@@ -61,13 +62,6 @@ public class CaptchaSolver implements CaptchaAPI {
             this.key = key;
             setPreferredSize(new Dimension(460, 535));
 
-            JPanel panel = new JPanel(new MigLayout("fill, insets 0"));
-            panel.add(this);
-
-            JOptionPane pane = new JOptionPane(panel, JOptionPane.PLAIN_MESSAGE,
-                    JOptionPane.DEFAULT_OPTION, null, new Object[]{}, null);
-            pane.setBorder(BorderFactory.createEmptyBorder(0, 0, -4, 0));
-
             key.whenComplete((k, t) -> {
                 if (timeline != null) {
                     timeline.stop();
@@ -81,7 +75,19 @@ public class CaptchaSolver implements CaptchaAPI {
             });
 
             Platform.runLater(this::prepareWebView);
+        }
+
+        public void display() {
+            JPanel panel = new JPanel(new MigLayout("fill, insets 0"));
+            panel.add(this);
+
+            JOptionPane pane = new JOptionPane(panel, JOptionPane.PLAIN_MESSAGE,
+                    JOptionPane.DEFAULT_OPTION, null, new Object[]{}, null);
+            pane.setBorder(BorderFactory.createEmptyBorder(0, 0, -4, 0));
+
             Popups.showMessageSync("Manual captcha solver", pane, d -> this.dialog = d);
+            // User closed pop-up without a solution to the key, solve with null.
+            if (!key.isDone()) key.complete(null);
         }
 
         private void prepareWebView() {
