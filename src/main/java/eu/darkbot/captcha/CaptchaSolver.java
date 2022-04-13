@@ -6,6 +6,8 @@ import javafx.animation.Animation;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.application.Platform;
+import javafx.beans.value.ChangeListener;
+import javafx.beans.value.ObservableValue;
 import javafx.collections.ListChangeListener;
 import javafx.concurrent.Worker;
 import javafx.embed.swing.JFXPanel;
@@ -30,6 +32,11 @@ import java.util.concurrent.TimeoutException;
 public class CaptchaSolver implements CaptchaAPI {
 
     private static final String url = "https://www.darkorbit.com/";
+    static {
+        // Due to how we use webview (creating a new one each time it is requested) we need the platform
+        // not to finish once we dispose it (the pop-up closes).
+        Platform.setImplicitExit(false);
+    }
 
     @Override
     public Map<String, String> solveCaptcha(URL url, String frontPage) {
@@ -56,6 +63,8 @@ public class CaptchaSolver implements CaptchaAPI {
 
         private Timeline timeline;
         private JDialog dialog;
+        private WebEngine engine;
+        private ChangeListener<Worker.State> onPageLoad;
         private int maxFrames = 120 * 2; // 120 seconds * 2 frames per second
 
         public SolverJFXPanel(CompletableFuture<String> key) {
@@ -71,6 +80,12 @@ public class CaptchaSolver implements CaptchaAPI {
                     dialog.setVisible(false);
                     dialog.dispose();
                     dialog = null;
+                }
+                if (engine != null) {
+                    engine.getLoadWorker().stateProperty().removeListener(onPageLoad);
+                    onPageLoad = null;
+                    engine.getLoadWorker().cancel();
+                    engine = null;
                 }
             });
 
@@ -93,69 +108,72 @@ public class CaptchaSolver implements CaptchaAPI {
         private void prepareWebView() {
             WebView webView = new WebView();
             setScene(new Scene(webView));
+            this.engine = webView.getEngine();
 
             webView.getChildrenUnmodifiable().addListener((ListChangeListener<Node>) change -> {
                 Set<Node> deadSeaScrolls = webView.lookupAll(".scroll-bar");
                 for (Node scroll : deadSeaScrolls) scroll.setVisible(false);
             });
 
-            WebEngine engine = webView.getEngine();
-
-            engine.getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
-                if (newState != Worker.State.SUCCEEDED || !webView.getEngine().getLocation().equals(url)) return;
-
-                String script = "" +
-                        // Close cookie container, if it exists
-                        "setTimeout(() => {" +
-                        "  let qcContainer = document.getElementById('qc-cmp2-container');" +
-                        "  if (qcContainer != null) qcContainer.remove();" +
-                        "}, 500);" +
-                        // Repeating function that tries to remove extra elements keeping captcha only
-                        "function tryCleanPage(delay) {" +
-                        "  if (delay > 1000) return;" + // We ran too many times, just stop
-                        "  let container = document.getElementsByClassName('eh_mc_container eh_mc_table')[0];" +
-                        "  let cap = document.getElementsByClassName('bgcdw_captcha')[0];" +
-                        "  if (!container || !cap) {" +
-                        "    setTimeout(() => tryCleanPage(delay + 25), delay);" + // Try to delay a bit more next time
-                        "    return;" +
-                        "  }" +
-                        "  container.innerHTML = '';" +
-                        "  container.appendChild(cap);" +
-                        "  document.getElementsByTagName('body')[0].style.minWidth = 0;" +
-                        "  let styles = [...document.getElementsByTagName('style')];" +
-                        "  for (let i in styles) styles[i].remove();" +
-                        "}" +
-                        "tryCleanPage(5);";
-
-                webView.getEngine().executeScript(script);
-
-                // Loaded the page twice?
-                if (timeline != null && timeline.getStatus() != Animation.Status.STOPPED)
-                    timeline.stop();
-
-                KeyFrame frame = new KeyFrame(Duration.seconds(0.5), e -> Platform.runLater(() -> {
-                    if (dialog == null) return;
-
-                    String response = (String) engine.executeScript("grecaptcha.getResponse()");
-                    if (response != null && !response.isEmpty()) key.complete(response);
-                    else if (maxFrames > 0) {
-                        maxFrames--;
-                        dialog.setTitle("Manual captcha solver (" + (maxFrames / 2) + "s left)");
-                        if (maxFrames <= 0)
-                            key.completeExceptionally(new TimeoutException("Took too long to solve captcha"));
-                    }
-                }));
-
-                timeline = new Timeline(frame);
-                timeline.setCycleCount(Animation.INDEFINITE);
-                timeline.play();
-            });
+            engine.getLoadWorker().stateProperty().addListener(onPageLoad = this::onPageLoad);
 
             engine.setUserAgent("BigpointClient/1.5.2");
             // avoid javafx user agent bug
             engine.loadContent("<html><body></body></html>", "text/html; charset=utf8");
             engine.load(url);
         }
+
+        private void onPageLoad(ObservableValue<? extends Worker.State> obs, Worker.State oldState, Worker.State newState) {
+            if (newState != Worker.State.SUCCEEDED || !engine.getLocation().equals(url)) return;
+
+            String script = "" +
+                    // Close cookie container, if it exists
+                    "setTimeout(() => {" +
+                    "  let qcContainer = document.getElementById('qc-cmp2-container');" +
+                    "  if (qcContainer != null) qcContainer.remove();" +
+                    "}, 500);" +
+                    // Repeating function that tries to remove extra elements keeping captcha only
+                    "function tryCleanPage(delay) {" +
+                    "  if (delay > 1000) return;" + // We ran too many times, just stop
+                    "  let container = document.getElementsByClassName('eh_mc_container eh_mc_table')[0];" +
+                    "  let cap = document.getElementsByClassName('bgcdw_captcha')[0];" +
+                    "  if (!container || !cap) {" +
+                    "    setTimeout(() => tryCleanPage(delay + 25), delay);" + // Try to delay a bit more next time
+                    "    return;" +
+                    "  }" +
+                    "  container.innerHTML = '';" +
+                    "  container.appendChild(cap);" +
+                    "  document.getElementsByTagName('body')[0].style.minWidth = 0;" +
+                    "  let styles = [...document.getElementsByTagName('style')];" +
+                    "  for (let i in styles) styles[i].remove();" +
+                    "}" +
+                    "tryCleanPage(5);";
+
+            this.engine.executeScript(script);
+
+            // Loaded the page twice? stop the previous timeline.
+            if (timeline != null && timeline.getStatus() != Animation.Status.STOPPED)
+                timeline.stop();
+
+            this.timeline = new Timeline(new KeyFrame(Duration.seconds(0.5),
+                    e -> Platform.runLater(this::checkResolved)));
+            this.timeline.setCycleCount(Animation.INDEFINITE);
+            this.timeline.play();
+        }
+
+        private void checkResolved() {
+            if (this.dialog == null) return;
+
+            String response = (String) engine.executeScript("grecaptcha.getResponse()");
+            if (response != null && !response.isEmpty()) key.complete(response);
+            else if (this.maxFrames > 0) {
+                this.maxFrames--;
+                this.dialog.setTitle("Manual captcha solver (" + (this.maxFrames / 2) + "s left)");
+                if (this.maxFrames <= 0)
+                    key.completeExceptionally(new TimeoutException("Took too long to solve captcha"));
+            }
+        }
+
     }
 
 }
