@@ -44,21 +44,27 @@ public class CaptchaSolver implements CaptchaAPI {
 
         System.out.println("Captcha detected, opening solver...");
 
-        CompletableFuture<String> key = new CompletableFuture<>();
-        SwingUtilities.invokeLater(() -> new SolverJFXPanel(key).display());
+        String response = getResponse();
+        System.gc();
 
-        try {
-            String response = key.get(150, TimeUnit.SECONDS); // Worst-case scenario, timeout after 150s
-            if (response != null) return Collections.singletonMap("g-recaptcha-response", response);
-        } catch (InterruptedException | ExecutionException | TimeoutException e) {
-            e.printStackTrace();
-        }
-
-        System.out.println("No solution to the captcha was provided, timed out.");
+        if (response != null) return Collections.singletonMap("g-recaptcha-response", response);
+        System.out.println("No solution to the captcha was provided or timed out.");
         return Collections.emptyMap();
     }
 
-    private static class SolverJFXPanel extends JFXPanel {
+    private String getResponse() {
+        CompletableFuture<String> key = new CompletableFuture<>();
+        SwingUtilities.invokeLater(new SolverJFXPanel(key));
+
+        try {
+            return key.get(150, TimeUnit.SECONDS); // Worst-case scenario, timeout after 150s
+        } catch (InterruptedException | ExecutionException | TimeoutException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    private static class SolverJFXPanel extends JFXPanel implements Runnable {
         private final CompletableFuture<String> key;
 
         private Timeline timeline;
@@ -92,7 +98,8 @@ public class CaptchaSolver implements CaptchaAPI {
             Platform.runLater(this::prepareWebView);
         }
 
-        public void display() {
+        @Override
+        public void run() {
             JPanel panel = new JPanel(new MigLayout("fill, insets 0"));
             panel.add(this);
 
