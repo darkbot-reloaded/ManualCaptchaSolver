@@ -171,7 +171,7 @@ public class CaptchaSolver implements CaptchaAPI {
         private void checkResolved() {
             if (this.dialog == null) return;
 
-            String response = (String) engine.executeScript("grecaptcha.getResponse()");
+            String response = (String) engine.executeScript("grecaptcha ? grecaptcha.getResponse() : null");
             if (response != null && !response.isEmpty()) key.complete(response);
             else if (this.maxFrames > 0) {
                 this.maxFrames--;
