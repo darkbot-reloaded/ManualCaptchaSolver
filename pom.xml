@@ -24,20 +24,16 @@
     </repositories>
 
     <dependencies>
-
         <dependency>
             <groupId>com.github.darkbot-reloaded</groupId>
             <artifactId>DarkBot</artifactId>
-            <version>master-18751bbe1f-1</version>
+            <version>master-6294f36043-1</version>
             <scope>provided</scope>
         </dependency>
-
         <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-web</artifactId>
             <version>17.0.2</version>
-            <!--<scope>system</scope>
-            <systemPath>${project.basedir}/lib/javafx-web-14-win.jar</systemPath>-->
         </dependency>
         <dependency>
             <groupId>org.openjfx</groupId>

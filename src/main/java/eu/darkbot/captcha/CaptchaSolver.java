@@ -107,7 +107,9 @@ public class CaptchaSolver implements CaptchaAPI {
                     JOptionPane.DEFAULT_OPTION, null, new Object[]{}, null);
             pane.setBorder(BorderFactory.createEmptyBorder(0, 0, -4, 0));
 
-            Popups.showMessageSync("Manual captcha solver", pane, d -> this.dialog = d);
+            Popups.of("Manual captcha solver", pane)
+                    .callback(d -> this.dialog = d)
+                    .showSync();
             // User closed pop-up without a solution to the key, solve with null.
             if (!key.isDone()) key.complete(null);
         }
