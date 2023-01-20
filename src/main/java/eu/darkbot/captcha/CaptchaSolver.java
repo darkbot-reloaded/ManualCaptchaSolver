@@ -84,8 +84,6 @@ public class CaptchaSolver implements CaptchaAPI {
                 }
                 if (dialog != null) {
                     dialog.setVisible(false);
-                    dialog.dispose();
-                    dialog = null;
                 }
                 if (engine != null) {
                     engine.getLoadWorker().stateProperty().removeListener(onPageLoad);
