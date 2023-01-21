@@ -13,6 +13,8 @@ import javafx.concurrent.Worker;
 import javafx.embed.swing.JFXPanel;
 import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.control.ProgressIndicator;
+import javafx.scene.layout.StackPane;
 import javafx.scene.web.WebEngine;
 import javafx.scene.web.WebView;
 import javafx.util.Duration;
@@ -32,6 +34,8 @@ import java.util.concurrent.TimeoutException;
 public class CaptchaSolver implements CaptchaAPI {
 
     private static final String url = "https://www.darkorbit.com/";
+    private static boolean isFirstLogin = true;
+
     static {
         // Due to how we use webview (creating a new one each time it is requested) we need the platform
         // not to finish once we dispose it (the pop-up closes).
@@ -47,7 +51,11 @@ public class CaptchaSolver implements CaptchaAPI {
         String response = getResponse();
         System.gc();
 
-        if (response != null) return Collections.singletonMap("g-recaptcha-response", response);
+        if (response != null) {
+            isFirstLogin = false;
+            System.out.println("Captcha solved successfully");
+            return Collections.singletonMap("g-recaptcha-response", response);
+        }
         System.out.println("No solution to the captcha was provided or timed out.");
         return Collections.emptyMap();
     }
@@ -57,7 +65,7 @@ public class CaptchaSolver implements CaptchaAPI {
         SwingUtilities.invokeLater(new SolverJFXPanel(key));
 
         try {
-            return key.get(150, TimeUnit.SECONDS); // Worst-case scenario, timeout after 150s
+            return key.get(190, TimeUnit.SECONDS); // Worst-case scenario, timeout after 190s
         } catch (InterruptedException | ExecutionException | TimeoutException e) {
             e.printStackTrace();
         }
@@ -65,16 +73,18 @@ public class CaptchaSolver implements CaptchaAPI {
     }
 
     private static class SolverJFXPanel extends JFXPanel implements Runnable {
-        private final CompletableFuture<String> key;
 
+        private final CompletableFuture<String> key;
         private Timeline timeline;
         private JDialog dialog;
         private WebEngine engine;
+        private WebView webView;
         private ChangeListener<Worker.State> onPageLoad;
-        private int maxFrames = 120 * 2; // 120 seconds * 2 frames per second
+        private int maxFrames;
 
         public SolverJFXPanel(CompletableFuture<String> key) {
             this.key = key;
+            maxFrames = isFirstLogin ? 40 * 2 : 15 * 2;
             setPreferredSize(new Dimension(460, 535));
 
             key.whenComplete((k, t) -> {
@@ -113,9 +123,13 @@ public class CaptchaSolver implements CaptchaAPI {
         }
 
         private void prepareWebView() {
-            WebView webView = new WebView();
-            setScene(new Scene(webView));
-            this.engine = webView.getEngine();
+            webView = new WebView();
+            engine = webView.getEngine();
+
+            StackPane root = new StackPane();
+            ProgressIndicator progressIndicator = new ProgressIndicator();
+            root.getChildren().addAll(progressIndicator);
+            setScene(new Scene(root));
 
             webView.getChildrenUnmodifiable().addListener((ListChangeListener<Node>) change -> {
                 Set<Node> deadSeaScrolls = webView.lookupAll(".scroll-bar");
@@ -132,6 +146,12 @@ public class CaptchaSolver implements CaptchaAPI {
 
         private void onPageLoad(ObservableValue<? extends Worker.State> obs, Worker.State oldState, Worker.State newState) {
             if (newState != Worker.State.SUCCEEDED || !engine.getLocation().equals(url)) return;
+
+            setScene(new Scene(webView));
+            getScene().setOnMouseClicked(event -> {
+                maxFrames = 140 * 2; //140 seconds * 2 frames per second
+                getScene().setOnMouseClicked(null);
+            });
 
             String script = "" +
                     // Close cookie container, if it exists
