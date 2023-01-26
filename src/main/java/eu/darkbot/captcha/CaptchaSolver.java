@@ -2,6 +2,7 @@ package eu.darkbot.captcha;
 
 import com.github.manolo8.darkbot.gui.utils.Popups;
 import com.github.manolo8.darkbot.utils.CaptchaAPI;
+import eu.darkbot.util.http.Http;
 import javafx.animation.Animation;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
@@ -34,7 +35,7 @@ import java.util.concurrent.TimeoutException;
 public class CaptchaSolver implements CaptchaAPI {
 
     private static final String url = "https://www.darkorbit.com/";
-    private static boolean isFirstLogin = true;
+    private boolean isFirstLogin = true;
 
     static {
         // Due to how we use webview (creating a new one each time it is requested) we need the platform
@@ -62,7 +63,7 @@ public class CaptchaSolver implements CaptchaAPI {
 
     private String getResponse() {
         CompletableFuture<String> key = new CompletableFuture<>();
-        SwingUtilities.invokeLater(new SolverJFXPanel(key));
+        SwingUtilities.invokeLater(new SolverJFXPanel(key, isFirstLogin ? 40 : 25));
 
         try {
             return key.get(190, TimeUnit.SECONDS); // Worst-case scenario, timeout after 190s
@@ -74,6 +75,9 @@ public class CaptchaSolver implements CaptchaAPI {
 
     private static class SolverJFXPanel extends JFXPanel implements Runnable {
 
+        private static final int FPS = 2;
+        private static final Duration FRAME_DURATION = Duration.seconds(1000d / FPS);
+
         private final CompletableFuture<String> key;
         private Timeline timeline;
         private JDialog dialog;
@@ -82,9 +86,9 @@ public class CaptchaSolver implements CaptchaAPI {
         private ChangeListener<Worker.State> onPageLoad;
         private int maxFrames;
 
-        public SolverJFXPanel(CompletableFuture<String> key) {
+        public SolverJFXPanel(CompletableFuture<String> key, int initialDelay) {
             this.key = key;
-            maxFrames = isFirstLogin ? 40 * 2 : 15 * 2;
+            maxFrames = initialDelay * FPS;
             setPreferredSize(new Dimension(460, 535));
 
             key.whenComplete((k, t) -> {
@@ -111,11 +115,11 @@ public class CaptchaSolver implements CaptchaAPI {
             JPanel panel = new JPanel(new MigLayout("fill, insets 0"));
             panel.add(this);
 
-            JOptionPane pane = new JOptionPane(panel, JOptionPane.PLAIN_MESSAGE,
-                    JOptionPane.DEFAULT_OPTION, null, new Object[]{}, null);
-            pane.setBorder(BorderFactory.createEmptyBorder(0, 0, -4, 0));
-
-            Popups.of("Manual captcha solver", pane)
+            Popups.of("Manual captcha solver", panel)
+                    .messageType(JOptionPane.PLAIN_MESSAGE)
+                    .optionType(JOptionPane.DEFAULT_OPTION)
+                    .options()
+                    .border(BorderFactory.createEmptyBorder(0, 0, -4, 0))
                     .callback(d -> this.dialog = d)
                     .showSync();
             // User closed pop-up without a solution to the key, solve with null.
@@ -138,7 +142,7 @@ public class CaptchaSolver implements CaptchaAPI {
 
             engine.getLoadWorker().stateProperty().addListener(onPageLoad = this::onPageLoad);
 
-            engine.setUserAgent("BigpointClient/1.5.2");
+            engine.setUserAgent(Http.getDefaultUserAgent());
             // avoid javafx user agent bug
             engine.loadContent("<html><body></body></html>", "text/html; charset=utf8");
             engine.load(url);
@@ -149,7 +153,7 @@ public class CaptchaSolver implements CaptchaAPI {
 
             setScene(new Scene(webView));
             getScene().setOnMouseClicked(event -> {
-                maxFrames = 140 * 2; //140 seconds * 2 frames per second
+                maxFrames = 140 * FPS;
                 getScene().setOnMouseClicked(null);
             });
 
@@ -182,8 +186,7 @@ public class CaptchaSolver implements CaptchaAPI {
             if (timeline != null && timeline.getStatus() != Animation.Status.STOPPED)
                 timeline.stop();
 
-            this.timeline = new Timeline(new KeyFrame(Duration.seconds(0.5),
-                    e -> Platform.runLater(this::checkResolved)));
+            this.timeline = new Timeline(new KeyFrame(FRAME_DURATION, e -> Platform.runLater(this::checkResolved)));
             this.timeline.setCycleCount(Animation.INDEFINITE);
             this.timeline.play();
         }
@@ -195,7 +198,7 @@ public class CaptchaSolver implements CaptchaAPI {
             if (response != null && !response.isEmpty()) key.complete(response);
             else if (this.maxFrames > 0) {
                 this.maxFrames--;
-                this.dialog.setTitle("Manual captcha solver (" + (this.maxFrames / 2) + "s left)");
+                this.dialog.setTitle("Manual captcha solver (" + (this.maxFrames / FPS) + "s left)");
                 if (this.maxFrames <= 0)
                     key.completeExceptionally(new TimeoutException("Took too long to solve captcha"));
             }
