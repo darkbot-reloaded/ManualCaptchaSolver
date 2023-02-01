@@ -1,7 +1,8 @@
 package eu.darkbot.captcha;
 
-import com.github.manolo8.darkbot.gui.utils.Popups;
+import com.github.manolo8.darkbot.Main;
 import com.github.manolo8.darkbot.utils.CaptchaAPI;
+import eu.darkbot.util.Popups;
 import eu.darkbot.util.http.Http;
 import javafx.animation.Animation;
 import javafx.animation.KeyFrame;
@@ -35,7 +36,7 @@ import java.util.concurrent.TimeoutException;
 public class CaptchaSolver implements CaptchaAPI {
 
     private static final String url = "https://www.darkorbit.com/";
-    private boolean isFirstLogin = true;
+    private boolean isFirstLogin;
 
     static {
         // Due to how we use webview (creating a new one each time it is requested) we need the platform
@@ -49,6 +50,7 @@ public class CaptchaSolver implements CaptchaAPI {
 
         System.out.println("Captcha detected, opening solver...");
 
+        isFirstLogin = Main.API == null;
         String response = getResponse();
         System.gc();
 
@@ -205,5 +207,4 @@ public class CaptchaSolver implements CaptchaAPI {
         }
 
     }
-
 }
