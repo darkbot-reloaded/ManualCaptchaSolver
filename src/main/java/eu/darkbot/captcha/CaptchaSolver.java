@@ -1,7 +1,7 @@
 package eu.darkbot.captcha;
 
-import com.github.manolo8.darkbot.gui.utils.Popups;
 import com.github.manolo8.darkbot.utils.CaptchaAPI;
+import eu.darkbot.util.Popups;
 import eu.darkbot.util.http.Http;
 import javafx.animation.Animation;
 import javafx.animation.KeyFrame;
@@ -35,7 +35,6 @@ import java.util.concurrent.TimeoutException;
 public class CaptchaSolver implements CaptchaAPI {
 
     private static final String url = "https://www.darkorbit.com/";
-    private boolean isFirstLogin = true;
 
     static {
         // Due to how we use webview (creating a new one each time it is requested) we need the platform
@@ -53,7 +52,6 @@ public class CaptchaSolver implements CaptchaAPI {
         System.gc();
 
         if (response != null) {
-            isFirstLogin = false;
             System.out.println("Captcha solved successfully");
             return Collections.singletonMap("g-recaptcha-response", response);
         }
@@ -63,7 +61,7 @@ public class CaptchaSolver implements CaptchaAPI {
 
     private String getResponse() {
         CompletableFuture<String> key = new CompletableFuture<>();
-        SwingUtilities.invokeLater(new SolverJFXPanel(key, isFirstLogin ? 40 : 25));
+        SwingUtilities.invokeLater(new SolverJFXPanel(key, 40));
 
         try {
             return key.get(190, TimeUnit.SECONDS); // Worst-case scenario, timeout after 190s
